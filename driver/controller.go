@@ -124,7 +124,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		}, nil
 	}
 
-// Todo int64 to int32 problem?
+// TODO int64 to int32 problem?
 	volumeReq := profitbricks.Volume{
 		Properties: profitbricks.VolumeProperties{
 			Name: volumeName,
