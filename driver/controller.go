@@ -21,12 +21,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
-	"github.com/digitalocean/godo"
+	"github.com/profitbricks/profitbricks-sdk-go"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -43,7 +42,7 @@ const (
 const (
 	defaultVolumeSizeInGB = 16 * GB
 
-	createdByDO = "Created by DigitalOcean CSI driver"
+	createdByPB = "Created by ProfitBricks CSI driver"
 )
 
 var (
@@ -96,13 +95,14 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	ll.Info("create volume called")
 
 	// get volume first, if it's created do no thing
-	volumes, _, err := d.doClient.Storage.ListVolumes(ctx, &godo.ListVolumeParams{
-		Region: d.region,
-		Name:   volumeName,
-	})
+	// TODO Add filter to ListVolumes
+	volumesResponse, err := d.pbClient.ListVolumes(d.dcID)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	filterVolume := func(v profitbricks.Volume) bool { return v.Properties.Name == volumeName}
+
+	volumes := choose(volumesResponse.Items, filterVolume)
 
 	// volume already exist, do nothing
 	if len(volumes) != 0 {
@@ -111,7 +111,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		}
 		vol := volumes[0]
 
-		if vol.SizeGigaBytes*GB != size {
+		if int64(vol.Properties.Size*GB) != size {
 			return nil, status.Error(codes.AlreadyExists, fmt.Sprintf("invalid option requested size: %d", size))
 		}
 
@@ -119,16 +119,18 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return &csi.CreateVolumeResponse{
 			Volume: &csi.Volume{
 				Id:            vol.ID,
-				CapacityBytes: vol.SizeGigaBytes * GB,
+				CapacityBytes: int64(vol.Properties.Size) * GB,
 			},
 		}, nil
 	}
 
-	volumeReq := &godo.VolumeCreateRequest{
-		Region:        d.region,
-		Name:          volumeName,
-		Description:   createdByDO,
-		SizeGigaBytes: size / GB,
+// Todo int64 to int32 problem?
+	volumeReq := profitbricks.Volume{
+		Properties: profitbricks.VolumeProperties{
+			Name: volumeName,
+			Size: int(size / GB),
+			Type: "HDD",
+		},
 	}
 
 	if !validateCapabilities(req.VolumeCapabilities) {
@@ -141,7 +143,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	}
 
 	ll.WithField("volume_req", volumeReq).Info("creating volume")
-	vol, _, err := d.doClient.Storage.CreateVolume(ctx, volumeReq)
+	vol, err := d.pbClient.CreateVolume(d.dcID, volumeReq)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -153,7 +155,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 			AccessibleTopology: []*csi.Topology{
 				{
 					Segments: map[string]string{
-						"region": d.region,
+						"dcID": d.dcID,
 					},
 				},
 			},
@@ -176,9 +178,14 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 	})
 	ll.Info("delete volume called")
 
-	resp, err := d.doClient.Storage.DeleteVolume(ctx, req.VolumeId)
+	resp, err := d.pbClient.DeleteVolume(d.dcID, req.VolumeId)
 	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusNotFound {
+		apiError, ok := err.(profitbricks.ApiError)
+		if !ok {
+			return nil, err
+		}
+
+		if apiError.HttpStatusCode() == http.StatusNotFound {
 			// we assume it's deleted already for idempotency
 			return &csi.DeleteVolumeResponse{}, nil
 		}
@@ -203,13 +210,6 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume capability must be provided")
 	}
 
-	dropletID, err := strconv.Atoi(req.NodeId)
-	if err != nil {
-		// don't return because the CSI tests passes ID's in non-integer format.
-		dropletID = 1 // for testing purposes only. Will fail in real world API
-		d.log.WithField("node_id", req.NodeId).Warn("node ID cannot be converted to an integer")
-	}
-
 	if req.Readonly {
 		// TODO(arslan): we should return codes.InvalidArgument, but the CSI
 		// test fails, because according to the CSI Spec, this flag cannot be
@@ -221,59 +221,68 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id":  req.VolumeId,
 		"node_id":    req.NodeId,
-		"droplet_id": dropletID,
 		"method":     "controller_publish_volume",
 	})
 	ll.Info("controller publish volume called")
 
 	// check if volume exist before trying to attach it
-	_, resp, err := d.doClient.Storage.GetVolume(ctx, req.VolumeId)
+	volume, err := d.pbClient.GetVolume(d.dcID, req.VolumeId)
 	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusNotFound {
+		apiError, ok := err.(profitbricks.ApiError)
+		if !ok {
+			return nil, err
+		}
+
+		if apiError.HttpStatusCode() == http.StatusNotFound {
 			return nil, status.Errorf(codes.NotFound, "volume %q not found", req.VolumeId)
 		}
 		return nil, err
 	}
 
 	// check if droplet exist before trying to attach the volume to the droplet
-	_, resp, err = d.doClient.Droplets.Get(ctx, dropletID)
+	server, err := d.pbClient.GetServer(d.dcID, req.NodeId)
 	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusNotFound {
-			return nil, status.Errorf(codes.NotFound, "droplet %q not found", dropletID)
-		}
-		return nil, err
-	}
-
-	action, resp, err := d.doClient.StorageActions.Attach(ctx, req.VolumeId, dropletID)
-	if err != nil {
-		// don't do anything if attached
-		if resp != nil && resp.StatusCode == http.StatusUnprocessableEntity {
-			if strings.Contains(err.Error(), "This volume is already attached") {
-				ll.WithFields(logrus.Fields{
-					"error": err,
-					"resp":  resp,
-				}).Warn("assuming volume is attached already")
-				return &csi.ControllerPublishVolumeResponse{}, nil
-			}
-
-			if strings.Contains(err.Error(), "Droplet already has a pending event") {
-				ll.WithFields(logrus.Fields{
-					"error": err,
-					"resp":  resp,
-				}).Warn("droplet is not able to detach the volume")
-				// sending an abort makes sure the csi-attacher retries with the next backoff tick
-				return nil, status.Errorf(codes.Aborted, "volume %q couldn't be attached. droplet %d is in process of another action",
-					req.VolumeId, dropletID)
-			}
-		}
-		return nil, err
-	}
-
-	if action != nil {
-		ll.Info("waiting until volume is attached")
-		if err := d.waitAction(ctx, req.VolumeId, action.ID); err != nil {
+		apiError, ok := err.(profitbricks.ApiError)
+		if !ok {
 			return nil, err
 		}
+
+		if apiError.HttpStatusCode() == http.StatusNotFound {
+			return nil, status.Errorf(codes.NotFound, "server %q not found", req.NodeId)
+		}
+		return nil, err
+	}
+
+	// don't do anything if attached
+	for _, volume := range server.Entities.Volumes.Items {
+		if strings.ToLower(volume.ID) == strings.ToLower(req.VolumeId) {
+			ll.WithFields(logrus.Fields{
+				"volume_id": req.VolumeId,
+				"node_id":  req.NodeId,
+			}).Warn("assuming volume is attached already")
+			return &csi.ControllerPublishVolumeResponse{}, nil
+		}
+	}
+
+	// TODO null != 0
+	if volume.Properties.DeviceNumber != 0 {
+		ll.WithFields(logrus.Fields{
+			"volume_id": req.VolumeId,
+			"node_id":  req.NodeId,
+		}).Warn("server is not able to attach the volume")
+		// sending an abort makes sure the csi-attacher retries with the next backoff tick
+		return nil, status.Errorf(codes.Aborted, "volume %q couldn't be attached, because already attached to other server",
+			req.VolumeId)
+	}
+
+	attachResp, err := d.pbClient.AttachVolume(d.dcID, req.NodeId, req.VolumeId)
+	if err != nil {
+		return nil, err
+	}
+
+	ll.Info("waiting until volume is attached")
+	if err := d.waitRequest(ctx, attachResp.Headers.Get("Location")); err != nil {
+		return nil, err
 	}
 
 	ll.Info("volume is attached")
@@ -286,69 +295,77 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume ID must be provided")
 	}
 
-	dropletID, err := strconv.Atoi(req.NodeId)
-	if err != nil {
-		// don't return because the CSI tests passes ID's in non-integer format
-		dropletID = 1 // for testing purposes only. Will fail in real world API
-		d.log.WithField("node_id", req.NodeId).Warn("node ID cannot be converted to an integer")
-	}
-
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id":  req.VolumeId,
 		"node_id":    req.NodeId,
-		"droplet_id": dropletID,
 		"method":     "controller_unpublish_volume",
 	})
 	ll.Info("controller unpublish volume called")
 
 	// check if volume exist before trying to detach it
-	_, resp, err := d.doClient.Storage.GetVolume(ctx, req.VolumeId)
+	volume, err := d.pbClient.GetVolume(d.dcID, req.VolumeId)
 	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusNotFound {
+		apiError, ok := err.(profitbricks.ApiError)
+		if !ok {
+			return nil, err
+		}
+
+		if apiError.HttpStatusCode() == http.StatusNotFound {
 			// assume it's detached
 			return &csi.ControllerUnpublishVolumeResponse{}, nil
 		}
 		return nil, err
 	}
 
-	// check if droplet exist before trying to detach the volume from the droplet
-	_, resp, err = d.doClient.Droplets.Get(ctx, dropletID)
+	// check if droplet exist before trying to detach the volume to the droplet
+	server, err := d.pbClient.GetServer(d.dcID, req.NodeId)
 	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusNotFound {
-			return nil, status.Errorf(codes.NotFound, "droplet %q not found", dropletID)
-		}
-		return nil, err
-	}
-
-	action, resp, err := d.doClient.StorageActions.DetachByDropletID(ctx, req.VolumeId, dropletID)
-	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusUnprocessableEntity {
-			if strings.Contains(err.Error(), "Attachment not found") {
-				ll.WithFields(logrus.Fields{
-					"error": err,
-					"resp":  resp,
-				}).Warn("assuming volume is detached already")
-				return &csi.ControllerUnpublishVolumeResponse{}, nil
-			}
-
-			if strings.Contains(err.Error(), "Droplet already has a pending event") {
-				ll.WithFields(logrus.Fields{
-					"error": err,
-					"resp":  resp,
-				}).Warn("droplet is not able to detach the volume")
-				// sending an abort makes sure the csi-attacher retries with the next backoff tick
-				return nil, status.Errorf(codes.Aborted, "volume %q couldn't be detached. droplet %d is in process of another action",
-					req.VolumeId, dropletID)
-			}
-		}
-		return nil, err
-	}
-
-	if action != nil {
-		ll.Info("waiting until volume is detached")
-		if err := d.waitAction(ctx, req.VolumeId, action.ID); err != nil {
+		apiError, ok := err.(profitbricks.ApiError)
+		if !ok {
 			return nil, err
 		}
+
+		if apiError.HttpStatusCode() == http.StatusNotFound {
+			return nil, status.Errorf(codes.NotFound, "server %q not found", req.NodeId)
+		}
+		return nil, err
+	}
+
+
+	// don't do anything if deattached
+	foundVolume := false
+	for _, volume := range server.Entities.Volumes.Items {
+		if strings.ToLower(volume.ID) == strings.ToLower(req.VolumeId) {
+			foundVolume = true
+			break;
+		}
+	}
+
+	if !foundVolume {
+		ll.WithFields(logrus.Fields{
+			"volume_id": req.VolumeId,
+			"node_id":  req.NodeId,
+		}).Warn("assuming volume is detached already")
+		return &csi.ControllerUnpublishVolumeResponse{}, nil
+	}
+
+	// TODO: nil != 0
+	if volume.Properties.DeviceNumber == 0 {
+		ll.WithFields(logrus.Fields{
+			"volume_id": req.VolumeId,
+			"node_id":  req.NodeId,
+		}).Warn("assuming volume is detached already")
+		return &csi.ControllerUnpublishVolumeResponse{}, nil
+	}
+
+	attachResp, err := d.pbClient.DetachVolume(d.dcID, req.NodeId, req.VolumeId)
+	if err != nil {
+		return nil, err
+	}
+
+	ll.Info("waiting until volume is detached")
+	if err := d.waitRequest(ctx, attachResp.Get("Location")); err != nil {
+		return nil, err
 	}
 
 	ll.Info("volume is detached")
@@ -376,9 +393,14 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 	ll.Info("validate volume capabilities called")
 
 	// check if volume exist before trying to validate it it
-	_, volResp, err := d.doClient.Storage.GetVolume(ctx, req.VolumeId)
+	_, err := d.pbClient.GetVolume(d.dcID, req.VolumeId)
 	if err != nil {
-		if volResp != nil && volResp.StatusCode == http.StatusNotFound {
+		apiError, ok := err.(profitbricks.ApiError)
+		if !ok {
+			return nil, err
+		}
+
+		if apiError.HttpStatusCode() == http.StatusNotFound {
 			return nil, status.Errorf(codes.NotFound, "volume %q not found", req.VolumeId)
 		}
 		return nil, err
@@ -412,66 +434,25 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 
 // ListVolumes returns a list of all requested volumes
 func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
-	var page int
 	var err error
-	if req.StartingToken != "" {
-		page, err = strconv.Atoi(req.StartingToken)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	listOpts := &godo.ListVolumeParams{
-		ListOptions: &godo.ListOptions{
-			PerPage: int(req.MaxEntries),
-			Page:    page,
-		},
-		Region: d.region,
-	}
 
 	ll := d.log.WithFields(logrus.Fields{
-		"list_opts":          listOpts,
 		"req_starting_token": req.StartingToken,
 		"method":             "list_volumes",
 	})
 	ll.Info("list volumes called")
 
-	var volumes []godo.Volume
-	lastPage := 0
-	for {
-		vols, resp, err := d.doClient.Storage.ListVolumes(ctx, listOpts)
-		if err != nil {
-			return nil, err
-		}
-
-		volumes = append(volumes, vols...)
-
-		if resp.Links == nil || resp.Links.IsLastPage() {
-			if resp.Links != nil {
-				page, err := resp.Links.CurrentPage()
-				if err != nil {
-					return nil, err
-				}
-				// save this for the response
-				lastPage = page
-			}
-			break
-		}
-
-		page, err := resp.Links.CurrentPage()
-		if err != nil {
-			return nil, err
-		}
-
-		listOpts.ListOptions.Page = page + 1
+	vols, err := d.pbClient.ListVolumes(d.dcID)
+	if err != nil {
+		return nil, err
 	}
 
 	var entries []*csi.ListVolumesResponse_Entry
-	for _, vol := range volumes {
+	for _, vol := range vols.Items {
 		entries = append(entries, &csi.ListVolumesResponse_Entry{
 			Volume: &csi.Volume{
 				Id:            vol.ID,
-				CapacityBytes: vol.SizeGigaBytes * GB,
+				CapacityBytes: int64(vol.Properties.Size * GB),
 			},
 		})
 	}
@@ -479,7 +460,7 @@ func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (
 	// TODO(arslan): check that the NextToken logic works fine, might be racy
 	resp := &csi.ListVolumesResponse{
 		Entries:   entries,
-		NextToken: strconv.Itoa(lastPage),
+		NextToken: "1",
 	}
 
 	ll.WithField("response", resp).Info("volumes listed")
@@ -591,11 +572,10 @@ func extractStorage(capRange *csi.CapacityRange) (int64, error) {
 	return 0, errors.New("requiredBytes and LimitBytes are not the same")
 }
 
-// waitAction waits until the given action for the volume is completed
-func (d *Driver) waitAction(ctx context.Context, volumeId string, actionId int) error {
+// waitRequest waits until the given request is completed
+func (d *Driver) waitRequest(ctx context.Context, request_id string) error {
 	ll := d.log.WithFields(logrus.Fields{
-		"volume_id": volumeId,
-		"action_id": actionId,
+		"request_id": request_id,
 	})
 
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
@@ -607,23 +587,23 @@ func (d *Driver) waitAction(ctx context.Context, volumeId string, actionId int) 
 	for {
 		select {
 		case <-ticker.C:
-			action, _, err := d.doClient.StorageActions.Get(ctx, volumeId, actionId)
+			request, err := d.pbClient.GetRequestStatus(request_id)
 			if err != nil {
-				ll.WithError(err).Info("waiting for volume errored")
+				ll.WithError(err).Info("waiting for request errored")
 				continue
 			}
-			ll.WithField("action_status", action.Status).Info("action received")
+			ll.WithField("request_status", request.Metadata.Status).Info("request received")
 
-			if action.Status == godo.ActionCompleted {
-				ll.Info("action completed")
+			if request.Metadata.Status == "DONE" {
+				ll.Info("request completed")
 				return nil
 			}
 
-			if action.Status == godo.ActionInProgress {
+			if request.Metadata.Status == "FAILED" {
 				continue
 			}
 		case <-ctx.Done():
-			return fmt.Errorf("timeout occured waiting for storage action of volume: %q", volumeId)
+			return fmt.Errorf("timeout occured waiting for request id: %q", request_id)
 		}
 	}
 }
@@ -634,33 +614,13 @@ func (d *Driver) checkLimit(ctx context.Context) error {
 	d.readyMu.Lock()
 	defer d.readyMu.Unlock()
 
-	account, _, err := d.doClient.Account.Get(ctx)
+	_, err := d.pbClient.GetContractResources()
 	if err != nil {
 		return status.Errorf(codes.Internal,
 			"couldn't get account information to check volume limit: %s", err.Error())
 	}
-
-	// administrative accounts might have zero length limits, make sure to not check them
-	if account.VolumeLimit == 0 {
-		return nil //  hail to the king!
-	}
-
-	// NOTE(arslan): the API returns the limit for *all* regions, so passing
-	// the region down as a parameter doesn't change the response.
-	// Nevertheless, this is something we should be aware of.
-	volumes, _, err := d.doClient.Storage.ListVolumes(ctx, &godo.ListVolumeParams{
-		Region: d.region,
-	})
-	if err != nil {
-		return status.Errorf(codes.Internal,
-			"couldn't get fetch volume list to check volume limit: %s", err.Error())
-	}
-
-	if account.VolumeLimit <= len(volumes) {
-		return status.Errorf(codes.ResourceExhausted,
-			"volume limit (%d) has been reached. Current number of volumes: %d. Please contact support.",
-			account.VolumeLimit, len(volumes))
-	}
+	// TODO
+	// contract.Properties.{SsdLimitPerContract,HddLimitPerContract}
 
 	return nil
 }

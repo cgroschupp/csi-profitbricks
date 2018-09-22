@@ -22,15 +22,17 @@ import (
 	"log"
 	"os"
 
-	"github.com/digitalocean/csi-digitalocean/driver"
+	"github.com/profitbricks/csi-profitbricks/driver"
 )
 
 func main() {
 	var (
-		endpoint = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/com.digitalocean.csi.dobs/csi.sock", "CSI endpoint")
-		token    = flag.String("token", "", "DigitalOcean access token")
-		url      = flag.String("url", "https://api.digitalocean.com/", "DigitalOcean API URL")
-		version  = flag.Bool("version", false, "Print the version and exit.")
+		endpoint   = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/com.profitbricks.csi.dobs/csi.sock", "CSI endpoint")
+		username   = flag.String("username", "", "ProfitBricks username")
+		password   = flag.String("password", "", "ProfitBricks password")
+		datacenter = flag.String("datacenter", "", "ProfitBricks datacenter")
+		url        = flag.String("url", "https://api.digitalocean.com/", "ProfitBricks API URL")
+		version    = flag.Bool("version", false, "Print the version and exit.")
 	)
 	flag.Parse()
 
@@ -39,7 +41,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	drv, err := driver.NewDriver(*endpoint, *token, *url)
+	drv, err := driver.NewDriver(*endpoint, *username, *password, *datacenter, *url)
 	if err != nil {
 		log.Fatalln(err)
 	}

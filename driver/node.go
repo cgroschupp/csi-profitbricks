@@ -25,19 +25,20 @@ limitations under the License.
 package driver
 
 import (
+	"fmt"
 	"context"
 	"net/http"
 	"path/filepath"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
+	"github.com/profitbricks/profitbricks-sdk-go"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 const (
-	diskIDPath   = "/dev/disk/by-id"
-	diskDOPrefix = "scsi-0DO_Volume_"
+	diskIDPath   = "/dev/"
 
 	// See: https://www.digitalocean.com/docs/volumes/overview/#limits
 	maxVolumesPerNode = 7
@@ -61,15 +62,23 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Volume Capability must be provided")
 	}
 
-	vol, resp, err := d.doClient.Storage.GetVolume(ctx, req.VolumeId)
+	vol, err := d.pbClient.GetVolume(d.dcID, req.VolumeId)
+
+
 	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusNotFound {
+		apiError, ok := err.(profitbricks.ApiError)
+		if !ok {
+			return nil, err
+		}
+
+		if apiError.HttpStatusCode() == http.StatusNotFound {
 			return nil, status.Errorf(codes.NotFound, "volume %q not found", req.VolumeId)
 		}
-		return nil, err
+
 	}
 
-	source := getDiskSource(vol.Name)
+	// Todo: Problem int64 to int32
+	source := getDiskSource(int(vol.Properties.DeviceNumber))
 	target := req.StagingTargetPath
 
 	mnt := req.VolumeCapability.GetMount()
@@ -82,7 +91,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id":           req.VolumeId,
-		"volume_name":         vol.Name,
+		"volume_name":         vol.Properties.Name,
 		"staging_target_path": req.StagingTargetPath,
 		"source":              source,
 		"fsType":              fsType,
@@ -310,6 +319,7 @@ func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (
 
 // getDiskSource returns the absolute path of the attached volume for the given
 // DO volume name
-func getDiskSource(volumeName string) string {
-	return filepath.Join(diskIDPath, diskDOPrefix+volumeName)
+func getDiskSource(deviceNumber int) string {
+	// TODO: dangerous replace with other method
+	return filepath.Join(diskIDPath, fmt.Sprintf("vd%s", rune(int('a') + (deviceNumber - 1))))
 }

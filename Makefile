@@ -1,4 +1,4 @@
-NAME=do-csi-plugin
+NAME=pb-csi-plugin
 OS ?= linux
 ifeq ($(strip $(shell git status --porcelain 2>/dev/null)),)
   GIT_TREE_STATE=clean
@@ -7,8 +7,8 @@ else
 endif
 COMMIT ?= $(shell git rev-parse HEAD)
 BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
-LDFLAGS ?= -X github.com/digitalocean/csi-digitalocean/driver.version=${VERSION} -X github.com/digitalocean/csi-digitalocean/driver.commit=${COMMIT} -X github.com/digitalocean/csi-digitalocean/driver.gitTreeState=${GIT_TREE_STATE}
-PKG ?= github.com/digitalocean/csi-digitalocean/cmd/do-csi-plugin
+LDFLAGS ?= -X github.com/profitbricks/csi-profitbricks/driver.version=${VERSION} -X github.com/profitbricks/csi-profitbricks/driver.commit=${COMMIT} -X github.com/profitbricks/csi-profitbricks/driver.gitTreeState=${GIT_TREE_STATE}
+PKG ?= github.com/profitbricks/csi-profitbricks/cmd/pb-csi-plugin
 
 ## Bump the version in the version file. Set BUMP to [ patch | major | minor ]
 BUMP := patch
@@ -19,23 +19,23 @@ all: test
 publish: compile build push clean
 
 .PHONY: bump-version
-bump-version: 
+bump-version:
 	@go get -u github.com/jessfraz/junk/sembump # update sembump tool
 	$(eval NEW_VERSION = $(shell sembump --kind $(BUMP) $(VERSION)))
 	@echo "Bumping VERSION from $(VERSION) to $(NEW_VERSION)"
 	@echo $(NEW_VERSION) > VERSION
-	@cp deploy/kubernetes/releases/csi-digitalocean-${VERSION}.yaml deploy/kubernetes/releases/csi-digitalocean-${NEW_VERSION}.yaml
-	@sed -i'' -e 's/${VERSION}/${NEW_VERSION}/g' deploy/kubernetes/releases/csi-digitalocean-${NEW_VERSION}.yaml
+	@cp deploy/kubernetes/releases/csi-profitbricks-${VERSION}.yaml deploy/kubernetes/releases/csi-profitbricks-${NEW_VERSION}.yaml
+	@sed -i'' -e 's/${VERSION}/${NEW_VERSION}/g' deploy/kubernetes/releases/csi-profitbricks-${NEW_VERSION}.yaml
 	@sed -i'' -e 's/${VERSION}/${NEW_VERSION}/g' README.md
 	$(eval NEW_DATE = $(shell date +%Y.%m.%d))
-	@sed -i'' -e 's/## unreleased/## ${NEW_VERSION} - ${NEW_DATE}/g' CHANGELOG.md 
+	@sed -i'' -e 's/## unreleased/## ${NEW_VERSION} - ${NEW_DATE}/g' CHANGELOG.md
 	@ echo '## unreleased\n' | cat - CHANGELOG.md > temp && mv temp CHANGELOG.md
-	@rm README.md-e CHANGELOG.md-e deploy/kubernetes/releases/csi-digitalocean-${NEW_VERSION}.yaml-e
+	@rm README.md-e CHANGELOG.md-e deploy/kubernetes/releases/csi-profitbricks-${NEW_VERSION}.yaml-e
 
 .PHONY: compile
 compile:
 	@echo "==> Building the project"
-	@env CGO_ENABLED=0 GOOS=${OS} GOARCH=amd64 go build -o cmd/do-csi-plugin/${NAME} -ldflags "$(LDFLAGS)" ${PKG} 
+	@env CGO_ENABLED=0 GOOS=${OS} GOARCH=amd64 go build -o cmd/pb-csi-plugin/${NAME} -ldflags "$(LDFLAGS)" ${PKG}
 
 
 .PHONY: test
@@ -53,16 +53,16 @@ test-integration:
 .PHONY: build
 build:
 	@echo "==> Building the docker image"
-	@docker build -t digitalocean/do-csi-plugin:$(VERSION) cmd/do-csi-plugin -f cmd/do-csi-plugin/Dockerfile
+	@docker build -t profitbricks/pb-csi-plugin:$(VERSION) cmd/pb-csi-plugin -f cmd/pb-csi-plugin/Dockerfile
 
 .PHONY: push
 push:
 ifeq ($(shell [[ $(BRANCH) != "master" && $(VERSION) != "dev" ]] && echo true ),true)
 	@echo "ERROR: Publishing image with a SEMVER version '$(VERSION)' is only allowed from master"
 else
-	@echo "==> Publishing digitalocean/do-csi-plugin:$(VERSION)"
-	@docker push digitalocean/do-csi-plugin:$(VERSION)
-	@echo "==> Your image is now available at digitalocean/do-csi-plugin:$(VERSION)"
+	@echo "==> Publishing profitbricks/pb-csi-plugin:$(VERSION)"
+	@docker push profitbricks/pb-csi-plugin:$(VERSION)
+	@echo "==> Your image is now available at profitbricks/pb-csi-plugin:$(VERSION)"
 endif
 
 .PHONY: clean

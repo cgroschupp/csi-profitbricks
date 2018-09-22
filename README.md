@@ -1,16 +1,16 @@
-# csi-digitalocean [![Build Status](https://travis-ci.org/digitalocean/csi-digitalocean.svg?branch=master)](https://travis-ci.org/digitalocean/csi-digitalocean)
-A Container Storage Interface ([CSI](https://github.com/container-storage-interface/spec)) Driver for DigitalOcean Block Storage. The CSI plugin allows you to use DigitalOcean Block Storage with your preferred Container Orchestrator.
+# csi-profitbricks [![Build Status](https://travis-ci.org/digitalocean/csi-digitalocean.svg?branch=master)](https://travis-ci.org/digitalocean/csi-digitalocean)
+A Container Storage Interface ([CSI](https://github.com/container-storage-interface/spec)) Driver for ProfitBricks Block Storage. The CSI plugin allows you to use ProfitBricks Block Storage with your preferred Container Orchestrator.
 
-The DigitalOcean CSI plugin is mostly tested on Kubernetes. Theoretically it
+The ProfitBricks CSI plugin is mostly tested on Kubernetes. Theoretically it
 should also work on other Container Orchestrator's, such as Mesos or
 Cloud Foundry. Feel free to test it on other CO's and give us a feedback.
 
 ## Releases
 
-The DigitalOcean CSI plugin follows [semantic versioning](https://semver.org/).
+The ProfitBricks CSI plugin follows [semantic versioning](https://semver.org/).
 The current version is: **`v0.2.0`**. This means that the project is still
 under active development and may not be production ready. The plugin will be
-bumped to **`v1.0.0`** once the [DigitalOcean Kubernetes
+bumped to **`v1.0.0`** once the [ProfitBricks Kubernetes
 product](https://www.digitalocean.com/products/kubernetes/) is released and
 will continue following the rules below:
 
@@ -23,7 +23,7 @@ will continue following the rules below:
 
 **Requirements:**
 
-* Kubernetes v1.10.5 minimum 
+* Kubernetes v1.10.5 minimum
 * `--allow-privileged` flag must be set to true for both the API server and the kubelet
 * (if you use Docker) the Docker daemon of the cluster nodes must allow shared mounts
 
@@ -32,7 +32,7 @@ will continue following the rules below:
 
 `Mount Propagation` is [disabled by
 default](https://github.com/rancher/rke/issues/765) on latest `v2.0.6` version
-of Rancher, which prevents the `csi-digitalocean` to function correctly. To fix
+of Rancher, which prevents the `csi-profitbricks` to function correctly. To fix
 the issue temporary, make sure to add the following settings to your cluster
 configuration YAML file:
 
@@ -51,7 +51,7 @@ services:
 #### 1. Create a secret with your DigitalOcean API Access Token:
 
 Replace the placeholder string starting with `a05...` with your own secret and
-save it as `secret.yml`: 
+save it as `secret.yml`:
 
 ```
 apiVersion: v1
@@ -82,7 +82,7 @@ digitalocean          Opaque                                1         18h
 #### 2. Deploy the CSI plugin and sidecars:
 
 Before you continue, be sure to checkout to a [tagged
-release](https://github.com/digitalocean/csi-digitalocean/releases). Always use the [latest stable version](https://github.com/digitalocean/csi-digitalocean/releases/latest) 
+release](https://github.com/digitalocean/csi-digitalocean/releases). Always use the [latest stable version](https://github.com/digitalocean/csi-digitalocean/releases/latest)
 For example, to use the latest stable version (`v0.2.0`) you can execute the following command:
 
 ```
@@ -151,7 +151,7 @@ spec:
   volumes:
     - name: my-do-volume
       persistentVolumeClaim:
-        claimName: csi-pvc 
+        claimName: csi-pvc
 ```
 
 Check if the pod is running successfully:
@@ -178,7 +178,7 @@ Requirements:
 
 * Go: min `v1.10.x`
 
-After making your changes, run the unit tests: 
+After making your changes, run the unit tests:
 
 ```
 $ make test

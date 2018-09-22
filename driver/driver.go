@@ -24,19 +24,16 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"sync"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
-	metadata "github.com/digitalocean/go-metadata"
-	"github.com/digitalocean/godo"
+	"github.com/profitbricks/profitbricks-sdk-go"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
 )
 
 const (
-	driverName = "com.digitalocean.csi.dobs"
+	driverName = "com.profitbricks.csi.dobs"
 )
 
 var (
@@ -55,9 +52,10 @@ type Driver struct {
 	endpoint string
 	nodeId   string
 	region   string
+	dcID     string
 
 	srv      *grpc.Server
-	doClient *godo.Client
+	pbClient *profitbricks.Client
 	mounter  Mounter
 	log      *logrus.Entry
 
@@ -70,30 +68,40 @@ type Driver struct {
 // NewDriver returns a CSI plugin that contains the necessary gRPC
 // interfaces to interact with Kubernetes over unix domain sockets for
 // managaing DigitalOcean Block Storage
-func NewDriver(ep, token, url string) (*Driver, error) {
-	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{
-		AccessToken: token,
-	})
-	oauthClient := oauth2.NewClient(context.Background(), tokenSource)
+func NewDriver(ep, username, password, datacenter, url string) (*Driver, error) {
 
-	all, err := metadata.NewClient().Metadata()
-	if err != nil {
-		return nil, fmt.Errorf("couldn't get metadata: %s", err)
+	pbClient := profitbricks.NewClient(
+		username,
+		password,
+	)
+
+	pbClient.SetURL(url)
+
+	if datacenter == "" {
+		return nil, fmt.Errorf("parameter datacenter is mandatory")
 	}
 
-	region := all.Region
-	nodeId := strconv.Itoa(all.DropletID)
-
-	opts := []godo.ClientOpt{}
-	opts = append(opts, godo.SetBaseURL(url))
-
-	doClient, err := godo.New(oauthClient, opts...)
+	dc, err := pbClient.GetDatacenter(datacenter)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't initialize DigitalOcean client: %s", err)
+		return nil, fmt.Errorf("unable to get datacenter %s: %s", datacenter, err)
 	}
+
+	nodeId, err := GetServerID()
+
+	if err != nil {
+		return nil, fmt.Errorf("unable to get nodeId %s: %s", datacenter, err)
+	}
+
+	region := dc.Properties.Location
+
+	/* TODO: validate client
+	if err != nil {
+		return nil, fmt.Errorf("couldn't initialize ProfitBricks client: %s", err)
+	} */
 
 	log := logrus.New().WithFields(logrus.Fields{
 		"region":  region,
+		"datacenter": datacenter,
 		"node_id": nodeId,
 		"version": version,
 	})
@@ -102,7 +110,8 @@ func NewDriver(ep, token, url string) (*Driver, error) {
 		endpoint: ep,
 		nodeId:   nodeId,
 		region:   region,
-		doClient: doClient,
+		dcID:     datacenter,
+		pbClient: pbClient,
 		mounter:  newMounter(log),
 		log:      log,
 	}, nil
