@@ -31,7 +31,7 @@ func main() {
 		username   = flag.String("username", "", "ProfitBricks username")
 		password   = flag.String("password", "", "ProfitBricks password")
 		datacenter = flag.String("datacenter", "", "ProfitBricks datacenter")
-		url        = flag.String("url", "https://api.digitalocean.com/", "ProfitBricks API URL")
+		url        = flag.String("url", "https://api.profitbricks.com/cloudapi/v4/", "ProfitBricks API URL")
 		version    = flag.Bool("version", false, "Print the version and exit.")
 	)
 	flag.Parse()
