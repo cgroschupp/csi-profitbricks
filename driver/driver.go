@@ -86,24 +86,18 @@ func NewDriver(ep, username, password, datacenter, url string) (*Driver, error) 
 		return nil, fmt.Errorf("unable to get datacenter %s: %s", datacenter, err)
 	}
 
-	nodeId, err := GetServerID()
+	region := dc.Properties.Location
 
+	nodeId, err := GetServerID()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get nodeId %s: %s", datacenter, err)
 	}
 
-	region := dc.Properties.Location
-
-	/* TODO: validate client
-	if err != nil {
-		return nil, fmt.Errorf("couldn't initialize ProfitBricks client: %s", err)
-	} */
-
 	log := logrus.New().WithFields(logrus.Fields{
-		"region":  region,
+		"region":     region,
 		"datacenter": datacenter,
-		"node_id": nodeId,
-		"version": version,
+		"node_id":    nodeId,
+		"version":    version,
 	})
 
 	return &Driver{
@@ -184,7 +178,7 @@ func (d *Driver) Stop() {
 
 // When building any packages that import version, pass the build/install cmd
 // ldflags like so:
-//   go build -ldflags "-X github.com/digitalocean/csi-digitalocean/driver.version=0.0.1"
+//   go build -ldflags "-X github.com/profitbricks/csi-digitalocean/driver.version=0.0.1"
 // GetVersion returns the current release version, as inserted at build time.
 func GetVersion() string {
 	return version

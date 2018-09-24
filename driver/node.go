@@ -25,8 +25,8 @@ limitations under the License.
 package driver
 
 import (
-	"fmt"
 	"context"
+	"fmt"
 	"net/http"
 	"path/filepath"
 
@@ -38,7 +38,7 @@ import (
 )
 
 const (
-	diskIDPath   = "/dev/"
+	diskIDPath = "/dev/"
 
 	// See: https://www.digitalocean.com/docs/volumes/overview/#limits
 	maxVolumesPerNode = 7
@@ -63,7 +63,6 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 	}
 
 	vol, err := d.pbClient.GetVolume(d.dcID, req.VolumeId)
-
 
 	if err != nil {
 		apiError, ok := err.(profitbricks.ApiError)
@@ -321,5 +320,5 @@ func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (
 // DO volume name
 func getDiskSource(deviceNumber int) string {
 	// TODO: dangerous replace with other method
-	return filepath.Join(diskIDPath, fmt.Sprintf("vd%s", rune(int('a') + (deviceNumber - 1))))
+	return filepath.Join(diskIDPath, fmt.Sprintf("vd%s", rune(int('a')+(deviceNumber-1))))
 }

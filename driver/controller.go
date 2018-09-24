@@ -46,7 +46,7 @@ const (
 )
 
 var (
-	// DO currently only support a single node to be attached to a single node
+	// PB currently only support a single node to be attached to a single node
 	// in read/write mode. This corresponds to `accessModes.ReadWriteOnce` in a
 	// PVC resource on Kubernets
 	supportedAccessMode = &csi.VolumeCapability_AccessMode{
@@ -100,7 +100,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	filterVolume := func(v profitbricks.Volume) bool { return v.Properties.Name == volumeName}
+	filterVolume := func(v profitbricks.Volume) bool { return v.Properties.Name == volumeName }
 
 	volumes := choose(volumesResponse.Items, filterVolume)
 
@@ -124,7 +124,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		}, nil
 	}
 
-// TODO int64 to int32 problem?
+	// TODO int64 to int32 problem?
 	volumeReq := profitbricks.Volume{
 		Properties: profitbricks.VolumeProperties{
 			Name: volumeName,
@@ -219,9 +219,9 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	}
 
 	ll := d.log.WithFields(logrus.Fields{
-		"volume_id":  req.VolumeId,
-		"node_id":    req.NodeId,
-		"method":     "controller_publish_volume",
+		"volume_id": req.VolumeId,
+		"node_id":   req.NodeId,
+		"method":    "controller_publish_volume",
 	})
 	ll.Info("controller publish volume called")
 
@@ -258,7 +258,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		if strings.ToLower(volume.ID) == strings.ToLower(req.VolumeId) {
 			ll.WithFields(logrus.Fields{
 				"volume_id": req.VolumeId,
-				"node_id":  req.NodeId,
+				"node_id":   req.NodeId,
 			}).Warn("assuming volume is attached already")
 			return &csi.ControllerPublishVolumeResponse{}, nil
 		}
@@ -268,7 +268,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	if volume.Properties.DeviceNumber != 0 {
 		ll.WithFields(logrus.Fields{
 			"volume_id": req.VolumeId,
-			"node_id":  req.NodeId,
+			"node_id":   req.NodeId,
 		}).Warn("server is not able to attach the volume")
 		// sending an abort makes sure the csi-attacher retries with the next backoff tick
 		return nil, status.Errorf(codes.Aborted, "volume %q couldn't be attached, because already attached to other server",
@@ -296,9 +296,9 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	}
 
 	ll := d.log.WithFields(logrus.Fields{
-		"volume_id":  req.VolumeId,
-		"node_id":    req.NodeId,
-		"method":     "controller_unpublish_volume",
+		"volume_id": req.VolumeId,
+		"node_id":   req.NodeId,
+		"method":    "controller_unpublish_volume",
 	})
 	ll.Info("controller unpublish volume called")
 
@@ -331,20 +331,19 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 		return nil, err
 	}
 
-
 	// don't do anything if deattached
 	foundVolume := false
 	for _, volume := range server.Entities.Volumes.Items {
 		if strings.ToLower(volume.ID) == strings.ToLower(req.VolumeId) {
 			foundVolume = true
-			break;
+			break
 		}
 	}
 
 	if !foundVolume {
 		ll.WithFields(logrus.Fields{
 			"volume_id": req.VolumeId,
-			"node_id":  req.NodeId,
+			"node_id":   req.NodeId,
 		}).Warn("assuming volume is detached already")
 		return &csi.ControllerUnpublishVolumeResponse{}, nil
 	}
@@ -353,7 +352,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	if volume.Properties.DeviceNumber == 0 {
 		ll.WithFields(logrus.Fields{
 			"volume_id": req.VolumeId,
-			"node_id":  req.NodeId,
+			"node_id":   req.NodeId,
 		}).Warn("assuming volume is detached already")
 		return &csi.ControllerUnpublishVolumeResponse{}, nil
 	}
@@ -626,7 +625,7 @@ func (d *Driver) checkLimit(ctx context.Context) error {
 }
 
 // validateCapabilities validates the requested capabilities. It returns false
-// if it doesn't satisfy the currently supported modes of DigitalOcean Block
+// if it doesn't satisfy the currently supported modes of ProfitBricks Block
 // Storage
 func validateCapabilities(caps []*csi.VolumeCapability) bool {
 	vcaps := []*csi.VolumeCapability_AccessMode{supportedAccessMode}

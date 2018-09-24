@@ -1,9 +1,9 @@
 package driver
 
 import (
-  "github.com/profitbricks/profitbricks-sdk-go"
-  "io/ioutil"
-  "strings"
+	"github.com/profitbricks/profitbricks-sdk-go"
+	"io/ioutil"
+	"strings"
 )
 
 const (
@@ -11,12 +11,12 @@ const (
 )
 
 func choose(ss []profitbricks.Volume, test func(profitbricks.Volume) bool) (ret []profitbricks.Volume) {
-    for _, s := range ss {
-        if test(s) {
-            ret = append(ret, s)
-        }
-    }
-    return
+	for _, s := range ss {
+		if test(s) {
+			ret = append(ret, s)
+		}
+	}
+	return
 }
 
 func GetServerID() (string, error) {
