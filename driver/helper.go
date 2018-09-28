@@ -22,5 +22,5 @@ func choose(ss []profitbricks.Volume, test func(profitbricks.Volume) bool) (ret 
 func GetServerID() (string, error) {
 	output, err := ioutil.ReadFile(productUUIDPath)
 	toReturn := string(output)
-	return strings.TrimSpace(toReturn), err
+	return strings.ToLower(strings.TrimSpace(toReturn)), err
 }
