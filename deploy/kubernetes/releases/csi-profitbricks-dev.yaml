@@ -1,17 +1,17 @@
 # Copyright 2018 DigitalOcean
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
- 
+
 # Configuration to deploy release version of the CSI DigitalOcean
 # plugin (https://github.com/digitalocean/csi-digitalocean) compatible with
 # Kubernetes >=v1.10.5
@@ -23,11 +23,11 @@
 kind: StorageClass
 apiVersion: storage.k8s.io/v1
 metadata:
-  name: do-block-storage
+  name: pb-block-storage
   namespace: kube-system
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"
-provisioner: com.digitalocean.csi.dobs
+provisioner: com.profitbricks.csi.pbbs
 
 ---
 
@@ -40,23 +40,23 @@ provisioner: com.digitalocean.csi.dobs
 kind: StatefulSet
 apiVersion: apps/v1beta1
 metadata:
-  name: csi-do-controller
+  name: csi-pb-controller
   namespace: kube-system
 spec:
-  serviceName: "csi-do"
+  serviceName: "csi-pb"
   replicas: 1
   template:
     metadata:
       labels:
-        app: csi-do-controller
-        role: csi-do
+        app: csi-pb-controller
+        role: csi-pb
     spec:
-      serviceAccount: csi-do-controller-sa
+      serviceAccount: csi-pb-controller-sa
       containers:
         - name: csi-provisioner
           image: quay.io/k8scsi/csi-provisioner:v0.3.0
           args:
-            - "--provisioner=com.digitalocean.csi.dobs"
+            - "--provisioner=com.profitbricks.csi.pbbs"
             - "--csi-address=$(ADDRESS)"
             - "--v=5"
           env:
@@ -78,22 +78,34 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
-        - name: csi-do-plugin
-          image: digitalocean/do-csi-plugin:v0.2.0
+        - name: csi-pb-plugin
+          image: cgroschupp/pb-csi-plugin:dev
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
-            - "--token=$(DIGITALOCEAN_ACCESS_TOKEN)"
-            - "--url=$(DIGITALOCEAN_API_URL)"
+            - "--username=$(PROFITBRICKS_USERNAME)"
+            - "--password=$(PROFITBRICKS_PASSWORD)"
+            - "--url=$(PROFITBRICKS_API_URL)"
+            - "--datacenter=$(PROFITBRICKS_DC)"
           env:
             - name: CSI_ENDPOINT
               value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
-            - name: DIGITALOCEAN_API_URL
-              value: https://api.digitalocean.com/
-            - name: DIGITALOCEAN_ACCESS_TOKEN
+            - name: PROFITBRICKS_API_URL
+              value: https://nbc-api.nexinto.com/cloudapi/v4
+            - name: PROFITBRICKS_DC
               valueFrom:
                 secretKeyRef:
-                  name: digitalocean
-                  key: access-token
+                  name: profitbricks
+                  key: datacenter
+            - name: PROFITBRICKS_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: profitbricks
+                  key: username
+            - name: PROFITBRICKS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: profitbricks
+                  key: password
           imagePullPolicy: "Always"
           volumeMounts:
             - name: socket-dir
@@ -106,7 +118,7 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: csi-do-controller-sa
+  name: csi-pb-controller-sa
   namespace: kube-system
 
 ---
@@ -114,11 +126,11 @@ metadata:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-do-controller-provisioner-binding
+  name: csi-pb-controller-provisioner-binding
   namespace: kube-system
 subjects:
   - kind: ServiceAccount
-    name: csi-do-controller-sa
+    name: csi-pb-controller-sa
     namespace: kube-system
 roleRef:
   kind: ClusterRole
@@ -130,11 +142,11 @@ roleRef:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-do-controller-attacher-binding
+  name: csi-pb-controller-attacher-binding
   namespace: kube-system
 subjects:
   - kind: ServiceAccount
-    name: csi-do-controller-sa
+    name: csi-pb-controller-sa
     namespace: kube-system
 roleRef:
   kind: ClusterRole
@@ -153,19 +165,19 @@ roleRef:
 kind: DaemonSet
 apiVersion: apps/v1beta2
 metadata:
-  name: csi-do-node
+  name: csi-pb-node
   namespace: kube-system
 spec:
   selector:
     matchLabels:
-      app: csi-do-node
+      app: csi-pb-node
   template:
     metadata:
       labels:
-        app: csi-do-node
-        role: csi-do
+        app: csi-pb-node
+        role: csi-pb
     spec:
-      serviceAccount: csi-do-node-sa
+      serviceAccount: csi-pb-node-sa
       hostNetwork: true
       containers:
         - name: driver-registrar
@@ -186,22 +198,34 @@ spec:
               # TODO(arslan): the registrar is not implemented yet
               # - name: registrar-socket-dir
               #   mountPath: /var/lib/csi/sockets/
-        - name: csi-do-plugin
-          image: digitalocean/do-csi-plugin:v0.2.0
+        - name: csi-pb-plugin
+          image: cgroschupp/pb-csi-plugin:dev
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
-            - "--token=$(DIGITALOCEAN_ACCESS_TOKEN)"
-            - "--url=$(DIGITALOCEAN_API_URL)"
+            - "--username=$(PROFITBRICKS_USERNAME)"
+            - "--password=$(PROFITBRICKS_PASSWORD)"
+            - "--url=$(PROFITBRICKS_API_URL)"
+            - "--datacenter=$(PROFITBRICKS_DC)"
           env:
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
-            - name: DIGITALOCEAN_API_URL
-              value: https://api.digitalocean.com/
-            - name: DIGITALOCEAN_ACCESS_TOKEN
+            - name: PROFITBRICKS_API_URL
+              value: https://nbc-api.nexinto.com/cloudapi/v4
+            - name: PROFITBRICKS_DC
               valueFrom:
                 secretKeyRef:
-                  name: digitalocean
-                  key: access-token
+                  name: profitbricks
+                  key: datacenter
+            - name: PROFITBRICKS_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: profitbricks
+                  key: username
+            - name: PROFITBRICKS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: profitbricks
+                  key: password
           imagePullPolicy: "Always"
           securityContext:
             privileged: true
@@ -226,7 +250,7 @@ spec:
         #    type: DirectoryOrCreate
         - name: plugin-dir
           hostPath:
-            path: /var/lib/kubelet/plugins/com.digitalocean.csi.dobs
+            path: /var/lib/kubelet/plugins/com.profitbricks.csi.pbbs
             type: DirectoryOrCreate
         - name: pods-mount-dir
           hostPath:
@@ -240,7 +264,7 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: csi-do-node-sa
+  name: csi-pb-node-sa
   namespace: kube-system
 
 ---
@@ -248,16 +272,16 @@ metadata:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-do-driver-registrar-binding
+  name: csi-pb-driver-registrar-binding
   namespace: kube-system
 subjects:
   - kind: ServiceAccount
-    name: csi-do-node-sa
+    name: csi-pb-node-sa
     namespace: kube-system
 roleRef:
   kind: ClusterRole
-  name: csi-do-driver-registrar-role
-  apiGroup: rbac.authorization.k8s.io          
+  name: csi-pb-driver-registrar-role
+  apiGroup: rbac.authorization.k8s.io
 
 
 ---
@@ -265,7 +289,7 @@ roleRef:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-do-driver-registrar-role
+  name: csi-pb-driver-registrar-role
   namespace: kube-system
 rules:
   - apiGroups: [""]
@@ -274,4 +298,3 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["list", "watch", "create", "update", "patch"]
-
