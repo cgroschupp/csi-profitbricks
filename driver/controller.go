@@ -130,6 +130,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 			Name: volumeName,
 			Size: int(size / GB),
 			Type: "HDD",
+			LicenceType: "OTHER",
 		},
 	}
 
