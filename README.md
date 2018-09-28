@@ -47,6 +47,14 @@ services:
       feature-gates: MountPropagation=true
 ```
 
+### [RancherOS](https://rancher.com/rancher-os/) and CoreOS users:
+
+```
+kubelet:
+  extra_binds:
+    - "/var/lib/kubelet/plugins:/var/lib/kubelet/plugins"
+    - "/var/lib/kubelet/pods:/var/lib/kubelet/pods:shared,z"
+```
 
 #### 1. Create a secret with your DigitalOcean API Access Token:
 
@@ -57,10 +65,11 @@ save it as `secret.yml`:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: digitalocean
+  name: profitbricks
   namespace: kube-system
 stringData:
-  access-token: "a05dd2f26b9b9ac2asdas__REPLACE_ME____123cb5d1ec17513e06da"
+  username: "a05dd2f26b9b9ac2asdas__REPLACE_ME____123cb5d1ec17513e06da"
+  password: "a05dd2f26b9b9ac2asdas__REPLACE_ME____123cb5d1ec17513e06da"
 ```
 
 and create the secret using kubectl:
