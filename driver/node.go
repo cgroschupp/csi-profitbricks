@@ -320,5 +320,5 @@ func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (
 // DO volume name
 func getDiskSource(deviceNumber int) string {
 	// TODO: dangerous replace with other method
-	return filepath.Join(diskIDPath, fmt.Sprintf("vd%s", rune(int('a')+(deviceNumber-1))))
+	return filepath.Join(diskIDPath, fmt.Sprintf("vd%s", string('a' - 1 + deviceNumber)))
 }
