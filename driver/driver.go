@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	driverName = "com.profitbricks.csi.dobs"
+	driverName = "com.profitbricks.csi.pbbs"
 )
 
 var (

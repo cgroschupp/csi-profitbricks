@@ -27,7 +27,7 @@ import (
 
 func main() {
 	var (
-		endpoint   = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/com.profitbricks.csi.dobs/csi.sock", "CSI endpoint")
+		endpoint   = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/com.profitbricks.csi.pbbs/csi.sock", "CSI endpoint")
 		username   = flag.String("username", "", "ProfitBricks username")
 		password   = flag.String("password", "", "ProfitBricks password")
 		datacenter = flag.String("datacenter", "", "ProfitBricks datacenter")
